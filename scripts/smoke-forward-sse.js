@@ -18,47 +18,41 @@ async function run() {
   }
 
   console.log('Provider:', res.headers.get('x-provider'))
+  console.log('Streaming SSE response:')
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
-
-  console.log('Streaming SSE response:')
-
-  let buffer = ''
+  let buf = ''
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    buffer += decoder.decode(value, { stream: true })
+    buf += decoder.decode(value, { stream: true })
 
-    // Process complete SSE events separated by double newline
-    let idx
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const chunk = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
+    // SSE events are separated by double-newline
+    const parts = buf.split('\n\n')
+    // Keep the last partial part in buffer
+    buf = parts.pop() || ''
 
-      // Parse SSE chunk into lines
-      const lines = chunk.split('\n')
-      const dataLines = lines.filter((l) => l.startsWith('data:'))
-      const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
-      if (data) process.stdout.write(data + '\n')
+    for (const part of parts) {
+      if (!part.trim()) continue
+      // Print the raw event block
+      console.log('--- event ---')
+      console.log(part)
 
-      // handle event: error lines if present
-      const eventLine = lines.find((l) => l.startsWith('event:'))
-      if (eventLine) {
-        const ev = eventLine.replace(/^event:\s?/, '')
-        console.log(`[event: ${ev}]`)
+      // Simple parsing: print data: lines combined
+      const dataLines = part.split('\n').filter((l) => l.startsWith('data:'))
+      if (dataLines.length) {
+        const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
+        console.log('data:', data)
       }
     }
   }
 
-  // flush any trailing buffered text
-  if (buffer.trim()) {
-    // Try to parse remaining as SSE (best-effort)
-    const lines = buffer.split('\n')
-    const dataLines = lines.filter((l) => l.startsWith('data:'))
-    const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
-    if (data) process.stdout.write(data + '\n')
+  // Flush any trailing buffer
+  if (buf.trim()) {
+    console.log('--- final partial event ---')
+    console.log(buf)
   }
 
   console.log('\n-- stream ended --')
