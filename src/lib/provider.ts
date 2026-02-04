@@ -4,6 +4,19 @@ export function getProviderName(): ProviderName {
   return (process.env.PROVIDER as ProviderName) || 'stub'
 }
 
+// Health/status helper: quick synchronous check whether the provider can run.
+// Returns { status: 'ok' | 'error', reason?: string }
+export function getProviderStatus(provider: ProviderName) {
+  if (provider === 'stub') return { status: 'ok' as const }
+  if (provider === 'openai') {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) return { status: 'error' as const, reason: 'OPENAI_API_KEY is not set in environment' }
+    return { status: 'ok' as const }
+  }
+  // Unknown providers: warn but treat as ok (will fallback to stub stream)
+  return { status: 'ok' as const }
+}
+
 // Create a simple stubbed ReadableStream that emits chunks like a model stream.
 export function createStubStream(message: string) {
   const encoder = new TextEncoder()
@@ -82,6 +95,7 @@ export function getChatStreamForProvider(provider: ProviderName, message: string
   }
 
   if (provider === 'openai') {
+    // If OPENAI_API_KEY missing createOpenAIStream will produce an error stream
     return createOpenAIStream(message)
   }
 
