@@ -1,64 +1,106 @@
+"use client"
+
 import Image from "next/image";
+import { FormEvent, useState } from "react";
 
 export default function Home() {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [streaming, setStreaming] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userText = input.trim();
+    setMessages((m) => [...m, { role: "user", text: userText }]);
+    setInput("");
+
+    try {
+      setStreaming(true);
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText }),
+      });
+
+      if (!res.ok || !res.body) {
+        const err = await res.text().catch(() => "error")
+        setMessages((m) => [...m, { role: "assistant", text: `Error: ${err}` }]);
+        setStreaming(false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+
+      // Start a new assistant message and append chunks as they arrive
+      setMessages((m) => [...m, { role: "assistant", text: "" }]);
+
+      let done = false;
+      while (!done) {
+        const { value, done: d } = await reader.read();
+        done = d;
+        if (value) {
+          const chunk = dec.decode(value);
+          setMessages((m) => {
+            // append to the last message (assistant)
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              last.text = last.text + chunk;
+            } else {
+              next.push({ role: "assistant", text: chunk });
+            }
+            return next;
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setMessages((m) => [...m, { role: "assistant", text: "Request failed" }]);
+    } finally {
+      setStreaming(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between bg-white px-16 py-32 sm:items-start dark:bg-black">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl leading-10 font-semibold tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="bg-foreground text-background flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 transition-colors hover:bg-[#383838] md:w-[158px] dark:hover:bg-[#ccc]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] md:w-[158px] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      <main className="flex min-h-screen w-full max-w-3xl flex-col items-stretch bg-white px-6 py-8 sm:rounded-lg sm:shadow-md dark:bg-[#0b0b0b]">
+        <header className="flex items-center gap-3 border-b border-zinc-100 pb-4">
+          <Image src="/next.svg" alt="logo" width={80} height={20} className="dark:invert" />
+          <h1 className="text-lg font-semibold">Personal Assistant</h1>
+          <div className="ml-auto text-sm text-zinc-500">Streaming demo</div>
+        </header>
+
+        <section className="flex-1 overflow-auto px-2 py-6" style={{ minHeight: 300 }}>
+          <div className="flex flex-col gap-4">
+            {messages.length === 0 && (
+              <div className="text-center text-zinc-500">Send a message to start the conversation.</div>
+            )}
+
+            {messages.map((m, i) => (
+              <div key={i} className={`max-w-[85%] p-3 rounded-md ${m.role === "user" ? "self-end bg-blue-600 text-white" : "self-start bg-zinc-100 text-zinc-900"}`}>
+                <pre className="whitespace-pre-wrap">{m.text}</pre>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={streaming ? "Waiting for response..." : "Type a message..."}
+            className="flex-1 rounded-md border border-zinc-200 px-3 py-2 focus:outline-none"
+            disabled={streaming}
+          />
+          <button type="submit" disabled={streaming} className="rounded-md bg-black text-white px-4 py-2 disabled:opacity-50">
+            {streaming ? "Streaming..." : "Send"}
+          </button>
+        </form>
+
+        <footer className="mt-4 text-xs text-zinc-500">Tip: run the included smoke test script while the dev server is running: node scripts/smoke-chat.js</footer>
       </main>
     </div>
   );
