@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getProviderName, getChatStreamForProvider } from '@/src/lib/provider'
+import { getProviderName, getChatStreamForProvider, getProviderStatus } from '@/src/lib/provider'
+
+function makeRequestId() {
+  // simple request id: timestamp-randhex
+  return `${Date.now().toString(36)}-${Math.floor(Math.random() * 0xfffff).toString(16)}`
+}
 
 export async function POST(req: Request) {
   try {
@@ -10,7 +15,23 @@ export async function POST(req: Request) {
     const { message } = await req.json()
     const provider = getProviderName()
 
+    const status = getProviderStatus(provider)
     const providerStream = getChatStreamForProvider(provider, message || '')
+
+    const requestId = makeRequestId()
+
+    const extraHeaders: Record<string, string> = {
+      'X-Provider': provider,
+      'X-Request-Id': requestId,
+      'Cache-Control': 'no-cache',
+    }
+
+    if (status.status === 'error') {
+      extraHeaders['X-Provider-Status'] = 'error'
+      if (status.reason) extraHeaders['X-Provider-Status-Reason'] = status.reason
+    } else {
+      extraHeaders['X-Provider-Status'] = 'ok'
+    }
 
     // If SSE format requested, wrap provider stream into Server-Sent Events framing.
     if (format.toLowerCase() === 'sse') {
@@ -45,9 +66,8 @@ export async function POST(req: Request) {
       return new Response(sseStream, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
-          'X-Provider': provider,
+          ...extraHeaders,
         }
       })
     }
@@ -56,8 +76,7 @@ export async function POST(req: Request) {
     return new Response(providerStream, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'X-Provider': provider,
+        ...extraHeaders,
       }
     })
   } catch (err) {

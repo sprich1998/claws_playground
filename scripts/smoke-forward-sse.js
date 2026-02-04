@@ -1,4 +1,4 @@
-// Smoke test for the forwarding streaming chat endpoint using SSE framing
+// Smoke test for the forwarding streaming chat endpoint in SSE mode
 // Usage: node scripts/smoke-forward-sse.js
 // Requires Node 18+ (global fetch + streams)
 
@@ -22,34 +22,43 @@ async function run() {
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
 
-  console.log('SSE streaming response:')
+  console.log('Streaming SSE response:')
 
   let buffer = ''
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 
-    // Process complete lines
+    // Process complete SSE events separated by double newline
     let idx
-    while ((idx = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, idx).trim()
-      buffer = buffer.slice(idx + 1)
-      if (!line) continue
-      // SSE lines are like: data: ... or event: ...
-      if (line.startsWith('data:')) {
-        console.log(line.replace(/^data:\s?/, ''))
-      } else if (line.startsWith('event:')) {
-        console.log(`[event] ${line.replace(/^event:\s?/, '')}`)
-      } else {
-        console.log(line)
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const chunk = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+
+      // Parse SSE chunk into lines
+      const lines = chunk.split('\n')
+      const dataLines = lines.filter((l) => l.startsWith('data:'))
+      const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
+      if (data) process.stdout.write(data + '\n')
+
+      // handle event: error lines if present
+      const eventLine = lines.find((l) => l.startsWith('event:'))
+      if (eventLine) {
+        const ev = eventLine.replace(/^event:\s?/, '')
+        console.log(`[event: ${ev}]`)
       }
     }
   }
 
-  // flush remaining buffer
+  // flush any trailing buffered text
   if (buffer.trim()) {
-    console.log(buffer.trim())
+    // Try to parse remaining as SSE (best-effort)
+    const lines = buffer.split('\n')
+    const dataLines = lines.filter((l) => l.startsWith('data:'))
+    const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
+    if (data) process.stdout.write(data + '\n')
   }
 
   console.log('\n-- stream ended --')
