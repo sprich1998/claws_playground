@@ -23,19 +23,26 @@ What I changed (this run)
   - Returns Content-Type: text/plain and disables caching.
 - ✅ Added smoke-test script: `claws_playground/scripts/smoke-chat.js`.
   - Uses global fetch (Node 18+) to POST to http://localhost:3000/api/chat and print streamed chunks as they arrive.
+- ✅ Added a provider abstraction and a new forwarding route: `POST /api/chat/forward` -> `claws_playground/src/app/api/chat/forward/route.ts`.
+  - `src/lib/provider.ts` exposes getProviderName() (reads PROVIDER env, defaults to "stub"), createStubStream(), and getChatStreamForProvider().
+  - The forward route reads PROVIDER, returns a stubbed ReadableStream when PROVIDER="stub", and sets an X-Provider header.
 
 How to run locally
 1. Install deps: npm install (in claws_playground)
 2. Start dev server: npm run dev
-3. In another terminal, run: node claws_playground/scripts/smoke-chat.js
+3. In another terminal, run the smoke test against the original route: node claws_playground/scripts/smoke-chat.js
+4. To test the forward route manually (curl):
+   curl -N -X POST http://localhost:3000/api/chat/forward -H "Content-Type: application/json" -d '{"message":"hello"}'
 
 Notes / discoveries
 - The endpoint currently uses a simple ReadableStream that emits text/plain chunks; later we'll switch to SSE (text/event-stream) or JSONL tokens depending on frontend choice.
-- This repo includes a nested git repository at `claws_playground` (embedded repo). Be aware clones of the outer repo won't include the inner repo contents unless turned into a submodule. No change made here — we left it as-is.
+- The new forward route is intentionally minimal and currently treats unknown PROVIDER values as the stub provider. This makes it safe to introduce provider wiring without breaking the app.
+- The claws_playground folder is currently a separate git repo (embedded). Be aware clones of the outer repo won't include the inner repo contents unless turned into a submodule. No change made here — we left it as-is.
 
 Next recommended task
-- Implement the chat UI (message list + input) and wire it to /api/chat using fetch + ReadableStream to display incremental tokens.
-  - Acceptance: user can type a message and see the stubbed response stream into the UI.
+- Milestone 2: Model integration (small first step)
+  - Implement provider wiring and keep the code low-risk by using an env-driven abstraction.
+  - Next run's target (small, focused): Update the client UI to optionally call `/api/chat/forward` instead of `/api/chat`, controlled by a simple flag in the UI or an environment toggle. Acceptance: when the client uses /api/chat/forward, the UI still shows the streamed stubbed response.
 
 Risks / tech debt
 - The streaming format is text/plain for now; when integrating real models we'll pick a structured streaming format (SSE or JSONL) and update both server and client.
@@ -43,14 +50,14 @@ Risks / tech debt
 
 
 ## Milestone 1: Basic chat UI (Next.js)
-- Replace landing page with a chat interface
-- Message list + input box
-- Simple agent backend endpoint (/api/chat) that accepts text and returns stubbed replies (done)
-- Add streaming via Server-Sent Events (SSE) or fetch + ReadableStream (server already streams; client next)
+- Replace landing page with a chat interface ✅
+- Message list + input box ✅
+- Simple agent backend endpoint (/api/chat) that accepts text and returns stubbed replies ✅
+- Client streaming via fetch + ReadableStream ✅
 
-## Milestone 2: Model integration
-- Choose a model API (OpenAI/Claude/local). For now, stub; later add provider env vars
-- Create server route that forwards user messages and streams assistant tokens back
-- Keep a conversation array (messages: [{role, content, ts}]) in session/local storage
+## Milestone 2: Model integration (next)
+- Add a provider abstraction and env var config ✅
+- Forward messages to a real model and stream tokens back (next)
+- Keep conversation history
 
 (remaining milestones unchanged)
