@@ -13,9 +13,9 @@ Why this is the next best move
 - Small, focused change that keeps main working and is easy to iterate on.
 
 Acceptance criteria (done means)
-- claws_playground/src/app/api/chat/route.ts exists and responds to POST with a ReadableStream that yields a stubbed multi-chunk reply.
-- A smoke-test script is present at claws_playground/scripts/smoke-chat.js that can be run with `node` to POST to the local dev server and log the streamed response.
-- Plan.md updated with what changed and next steps.
+- claws_playground/src/app/api/chat/route.ts responds to POST with a ReadableStream that yields a stubbed multi-chunk reply.
+- Smoke-test scripts are present at claws_playground/scripts and can be run with `node` to POST to the local dev server and log streamed responses.
+- Plan.md is kept up-to-date describing what changed and what to do next.
 
 What I changed (this run)
 - ✅ Implemented streaming stub endpoint: `POST /api/chat` -> `claws_playground/src/app/api/chat/route.ts`.
@@ -23,31 +23,47 @@ What I changed (this run)
   - Returns Content-Type: text/plain and disables caching.
 - ✅ Added smoke-test script: `claws_playground/scripts/smoke-chat.js`.
   - Uses global fetch (Node 18+) to POST to http://localhost:3000/api/chat and print streamed chunks as they arrive.
-- ✅ Added a provider abstraction and a new forwarding route: `POST /api/chat/forward` -> `claws_playground/src/app/api/chat/forward/route.ts`.
+- ✅ Added provider abstraction and forward route: `POST /api/chat/forward` -> `claws_playground/src/app/api/chat/forward/route.ts`.
   - `src/lib/provider.ts` exposes getProviderName() (reads PROVIDER env, defaults to "stub"), createStubStream(), and getChatStreamForProvider().
-  - The forward route reads PROVIDER, returns a stubbed ReadableStream when PROVIDER="stub", and sets an X-Provider header.
+  - The forward route returns a stubbed ReadableStream when PROVIDER is unset or "stub", and sets an X-Provider response header when available.
+- ✅ Updated the client UI to allow selecting the endpoint ("/api/chat" or "/api/chat/forward").
+  - `src/app/page.tsx` includes an Endpoint selector (default: /api/chat) so you can toggle forwarding without touching env vars.
+- ✅ Added an additional smoke test: `claws_playground/scripts/smoke-forward.js` to test the forwarding endpoint and print the X-Provider header.
 
 How to run locally
 1. Install deps: npm install (in claws_playground)
 2. Start dev server: npm run dev
-3. In another terminal, run the smoke test against the original route: node claws_playground/scripts/smoke-chat.js
-4. To test the forward route manually (curl):
+3. In another terminal, run the smoke test(s):
+   - node claws_playground/scripts/smoke-chat.js
+   - node claws_playground/scripts/smoke-forward.js
+4. Quick manual test via curl (forward route):
    curl -N -X POST http://localhost:3000/api/chat/forward -H "Content-Type: application/json" -d '{"message":"hello"}'
 
 Notes / discoveries
-- The endpoint currently uses a simple ReadableStream that emits text/plain chunks; later we'll switch to SSE (text/event-stream) or JSONL tokens depending on frontend choice.
-- The new forward route is intentionally minimal and currently treats unknown PROVIDER values as the stub provider. This makes it safe to introduce provider wiring without breaking the app.
-- The claws_playground folder is currently a separate git repo (embedded). Be aware clones of the outer repo won't include the inner repo contents unless turned into a submodule. No change made here — we left it as-is.
+- The endpoints currently stream plain text chunks (Content-Type: text/plain). When integrating real model APIs we'll likely switch to SSE (text/event-stream) or a JSONL token format and update both client and server accordingly.
+- The forward route currently treats unknown PROVIDER values as the stub provider (safe default). This keeps the app runnable without external API keys.
+- The claws_playground folder is a self-contained Next.js app inside this repo (it's its own git repo). If you plan to distribute the outer repo, consider converting this into a submodule or merging histories.
 
-Next recommended task
-- Milestone 2: Model integration (small first step)
-  - Implement provider wiring and keep the code low-risk by using an env-driven abstraction.
-  - Next run's target (small, focused): Update the client UI to optionally call `/api/chat/forward` instead of `/api/chat`, controlled by a simple flag in the UI or an environment toggle. Acceptance: when the client uses /api/chat/forward, the UI still shows the streamed stubbed response.
+Next recommended tasks (short-term)
+1) Small, focused: Model/provider integration (Milestone 2, step 1)
+   - Add a very small provider implementation that calls an external model API behind an env flag (e.g. PROVIDER=openai). Keep it optional and behind env vars.
+   - Acceptance: when PROVIDER=openai is set, the forward route should attempt to connect and return a safe error if credentials are missing. No secrets in repo.
+
+2) Streaming format & compatibility
+   - Decide on streaming token format (SSE vs JSONL) and update both server + client accordingly. This is a larger task — do it after a provider is wired.
+
+3) Tests & CI
+   - Add a lightweight smoke test (npm script) that runs the smoke scripts against a dev server started in CI, or a Node-based unit test that verifies provider selection logic.
+
+This run (what I actually changed)
+- ✅ Brought up the streaming stub endpoint and forwarding abstraction.
+- ✅ Added smoke tests and updated the UI with an endpoint selector.
+- ✅ Updated this Plan.md to reflect the current repository state and next steps.
 
 Risks / tech debt
-- The streaming format is text/plain for now; when integrating real models we'll pick a structured streaming format (SSE or JSONL) and update both server and client.
-- The claws_playground folder is currently a separate git repo (embedded). Consider consolidating or making it a submodule if repository boundaries matter.
-
+- Streaming format mismatch: front-end and future providers must agree on token framing. Plan to standardize on SSE or JSONL.
+- Provider implementations can introduce secrets; always require env vars and clear error messages.
+- The embedded Next.js app being its own repo may be confusing; consider consolidation.
 
 ## Milestone 1: Basic chat UI (Next.js)
 - Replace landing page with a chat interface ✅
