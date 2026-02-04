@@ -1,4 +1,4 @@
-// Smoke test for the forwarding streaming chat endpoint in SSE mode
+// Smoke test for the forwarding SSE streaming chat endpoint
 // Usage: node scripts/smoke-forward-sse.js
 // Requires Node 18+ (global fetch + streams)
 
@@ -18,41 +18,44 @@ async function run() {
   }
 
   console.log('Provider:', res.headers.get('x-provider'))
-  console.log('Streaming SSE response:')
+  console.log('X-Request-Id:', res.headers.get('x-request-id'))
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
-  let buf = ''
 
+  console.log('Streaming SSE response (raw events):')
+
+  let buffer = ''
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    buf += decoder.decode(value, { stream: true })
+    buffer += decoder.decode(value, { stream: true })
 
-    // SSE events are separated by double-newline
-    const parts = buf.split('\n\n')
-    // Keep the last partial part in buffer
-    buf = parts.pop() || ''
+    // Process complete SSE events separated by double-newline
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, idx).trim()
+      buffer = buffer.slice(idx + 2)
+      if (!rawEvent) continue
 
-    for (const part of parts) {
-      if (!part.trim()) continue
-      // Print the raw event block
-      console.log('--- event ---')
-      console.log(part)
+      // Print the raw event and also parse data: lines
+      console.log('--- EVENT START ---')
+      console.log(rawEvent)
 
-      // Simple parsing: print data: lines combined
-      const dataLines = part.split('\n').filter((l) => l.startsWith('data:'))
+      // Extract data lines
+      const dataLines = rawEvent.split('\n').filter((l) => l.startsWith('data:'))
       if (dataLines.length) {
-        const data = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
-        console.log('data:', data)
+        const payload = dataLines.map((l) => l.replace(/^data:\s?/, '')).join('\n')
+        console.log('\nParsed payload:\n' + payload)
       }
+
+      console.log('---- EVENT END ----\n')
     }
   }
 
-  // Flush any trailing buffer
-  if (buf.trim()) {
-    console.log('--- final partial event ---')
-    console.log(buf)
+  // Flush remaining buffer if any
+  if (buffer.trim()) {
+    console.log('Remaining buffer:\n', buffer)
   }
 
   console.log('\n-- stream ended --')

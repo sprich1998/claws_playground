@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "smoke:chat": "node scripts/smoke-chat.js",
     "smoke:forward": "node scripts/smoke-forward.js",
+    "smoke:forward-sse": "node scripts/smoke-forward-sse.js",
     "smoke": "node scripts/smoke-chat.js && node scripts/smoke-forward.js"
   },
   "dependencies": {

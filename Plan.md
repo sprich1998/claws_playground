@@ -29,6 +29,7 @@ What I changed (this run)
 - ✅ Updated the client UI to allow selecting the endpoint ("/api/chat" or "/api/chat/forward").
   - `src/app/page.tsx` includes an Endpoint selector (default: /api/chat) so you can toggle forwarding without touching env vars.
 - ✅ Added an additional smoke test: `claws_playground/scripts/smoke-forward.js` to test the forwarding endpoint and print the X-Provider header.
+- ✅ Added SSE smoke-test script: `claws_playground/scripts/smoke-forward-sse.js` and npm script `smoke:forward-sse` in package.json.
 
 How to run locally
 1. Install deps: npm install (in claws_playground)
@@ -36,6 +37,7 @@ How to run locally
 3. In another terminal, run the smoke test(s):
    - node claws_playground/scripts/smoke-chat.js
    - node claws_playground/scripts/smoke-forward.js
+   - node claws_playground/scripts/smoke-forward-sse.js
 4. Quick manual test via curl (forward route):
    curl -N -X POST http://localhost:3000/api/chat/forward -H "Content-Type: application/json" -d '{"message":"hello"}'
 
@@ -147,10 +149,10 @@ Acceptance: CI should run under 2–3 minutes and validate streaming behavior fo
 ### 5) Streaming format & client contract
 
 - Decide on a canonical streaming envelope before integrating real providers. Two viable options:
-  1) SSE (text/event-stream)
+ 1) SSE (text/event-stream)
      - Pros: browser-native EventSource support, simple framing (data:), easy to debug in curl.
      - Cons: EventSource doesn't allow POST by default — need to use fetch + ReadableStream or polyfill.
-  2) JSONL per-line tokens
+ 2) JSONL per-line tokens
      - Pros: self-describing events (json per line), easy cross-platform parsing.
      - Cons: client must buffer line breaks and parse incrementally.
 
