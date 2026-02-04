@@ -10,7 +10,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:chat": "node scripts/smoke-chat.js",
+    "smoke:forward": "node scripts/smoke-forward.js",
+    "smoke": "node scripts/smoke-chat.js && node scripts/smoke-forward.js"
   },
   "dependencies": {
     "next": "16.1.6",
