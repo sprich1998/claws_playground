@@ -44,26 +44,121 @@ Notes / discoveries
 - The forward route currently treats unknown PROVIDER values as the stub provider (safe default). This keeps the app runnable without external API keys.
 - The claws_playground folder is a self-contained Next.js app inside this repo (it's its own git repo). If you plan to distribute the outer repo, consider converting this into a submodule or merging histories.
 
-Next recommended tasks (short-term)
-1) Small, focused: Model/provider integration (Milestone 2, step 1)
-   - Add a very small provider implementation that calls an external model API behind an env flag (e.g. PROVIDER=openai). Keep it optional and behind env vars.
-   - Acceptance: when PROVIDER=openai is set, the forward route should attempt to connect and return a safe error if credentials are missing. No secrets in repo.
+---
 
-2) Streaming format & compatibility
-   - Decide on streaming token format (SSE vs JSONL) and update both server + client accordingly. This is a larger task — do it after a provider is wired.
+## Additions / Suggested improvements (added on agent request)
 
-3) Tests & CI
-   - Add a lightweight smoke test (npm script) that runs the smoke scripts against a dev server started in CI, or a Node-based unit test that verifies provider selection logic.
+Below are concise, actionable additions to make the project easier to consume and extend. They are written so a contributor can pick up the next tasks quickly.
 
-This run (what I actually changed)
-- ✅ Brought up the streaming stub endpoint and forwarding abstraction.
-- ✅ Added smoke tests and updated the UI with an endpoint selector.
-- ✅ Updated this Plan.md to reflect the current repository state and next steps.
+### 1) API examples (copy-paste runnable)
 
-Risks / tech debt
-- Streaming format mismatch: front-end and future providers must agree on token framing. Plan to standardize on SSE or JSONL.
-- Provider implementations can introduce secrets; always require env vars and clear error messages.
-- The embedded Next.js app being its own repo may be confusing; consider consolidation.
+- POST /api/chat (direct stub)
+  - Request:
+    - URL: http://localhost:3000/api/chat
+    - Method: POST
+    - Headers: Content-Type: application/json
+    - Body: { "message": "Hello" }
+  - curl example:
+    curl -N -X POST http://localhost:3000/api/chat \
+      -H "Content-Type: application/json" \
+      -d '{"message":"hello"}'
+
+- POST /api/chat/forward (provider-aware)
+  - Request:
+    - URL: http://localhost:3000/api/chat/forward
+    - Method: POST
+    - Headers: Content-Type: application/json
+    - Body: { "message": "Hello" }
+  - curl example:
+    curl -N -X POST http://localhost:3000/api/chat/forward \
+      -H "Content-Type: application/json" \
+      -d '{"message":"hello"}'
+
+- SSE mode (forward route supports ?format=sse)
+  - curl example:
+    curl -N -X POST "http://localhost:3000/api/chat/forward?format=sse" \
+      -H "Content-Type: application/json" \
+      -d '{"message":"hello"}'
+
+Notes: use -N to prevent curl from buffering the output so streamed chunks appear as they arrive.
+
+### 2) Provider interface & checklist
+
+When adding a new provider implementation, follow this minimal contract so the forward route and UI remain compatible:
+
+- Expose a function: getChatStreamForProvider(providerName: string, message: string): ReadableStream
+  - Should always return a ReadableStream (never throw); for error cases return a short error stream that yields a human-readable message then closes.
+  - Stream semantics:
+    - Each chunk should be a UTF-8 string (partial tokens are OK).
+    - If using SSE mode, the forward route will wrap these chunks into SSE "data: " lines.
+- Optionally export getProviderName() that reads process.env.PROVIDER for use in tests.
+- Do not embed API keys or secrets in code. Read keys from env vars and validate presence; if missing, return an error stream explaining what's missing.
+
+Acceptance for a new provider: an added provider file that can be selected via PROVIDER env var and the forward endpoint returns a stream (or an error stream) and sets X-Provider header.
+
+### 3) .env.example (place in claws_playground/.env.example)
+
+A small example file to make local dev easier. DO NOT commit secrets — only example placeholders.
+
+```
+# Provider selection: stub | openai | anthopic | my-provider
+PROVIDER=stub
+
+# Example: OpenAI key (leave blank if you do not have a key)
+OPENAI_API_KEY=
+```
+
+(There is a separate note in CONTRIBUTING advising to copy this to .env and fill secrets locally.)
+
+### 4) Tests & CI suggestions
+
+- CI smoke-test job (fast):
+  - Start dev server (npm run dev) in background, wait until port is ready.
+  - Run: node scripts/smoke-chat.js and node scripts/smoke-forward.js (or run the composite npm script if present).
+  - Fail if either script exits with non-zero or times out.
+- Unit tests for provider selection:
+  - Add a small Node test that imports src/lib/provider.ts, sets process.env.PROVIDER to various values, and asserts getProviderName() and getChatStreamForProvider() behavior (stream returns quickly and yields the expected first-chunk string).
+
+Acceptance: CI should run under 2–3 minutes and validate streaming behavior for the stub provider.
+
+### 5) Streaming format & client contract
+
+- Decide on a canonical streaming envelope before integrating real providers. Two viable options:
+  1) SSE (text/event-stream)
+     - Pros: browser-native EventSource support, simple framing (data:), easy to debug in curl.
+     - Cons: EventSource doesn't allow POST by default — need to use fetch + ReadableStream or polyfill.
+  2) JSONL per-line tokens
+     - Pros: self-describing events (json per line), easy cross-platform parsing.
+     - Cons: client must buffer line breaks and parse incrementally.
+
+- Short-term recommendation: keep the stub behavior (plain text stream) during development and add an SSE mode (already present on forward route) for experimentation. Standardize on SSE for Milestone 2 to make token events explicit.
+
+### 6) Developer UX: logging & error streams
+
+- Error signaling: when a provider cannot run (missing creds, network error), return a short, human-readable error stream and set a response header X-Provider-Status: error in addition to X-Provider.
+- Add a small request-id header (X-Request-Id) if the server can generate one to help correlate client and server logs.
+- Log timestamps for stream start/finish and provider selected — useful in development and lightweight observability.
+
+### 7) CONTRIBUTING & next steps (small roadmap)
+
+Add a short CONTRIBUTING snippet (or file) describing the following developer flow:
+- Setup:
+  - cp .env.example .env
+  - Fill OPENAI_API_KEY if you want to try the OpenAI provider
+  - npm install
+  - npm run dev
+- Running smoke tests:
+  - node scripts/smoke-chat.js
+  - node scripts/smoke-forward.js
+  - node scripts/smoke-forward-sse.js (if present)
+
+Next recommended tasks (with rough estimates):
+- Wire a minimal OpenAI provider stub that reads OPENAI_API_KEY and returns an error stream if missing (1 day)
+- Add CI smoke-test job (0.5 day)
+- Decide and standardize on SSE vs JSONL and update client/server (0.5–1 day)
+- Add a simple Playwright E2E test for the client streaming behavior (1–2 days)
+
+---
 
 ## Milestone 1: Basic chat UI (Next.js)
 - Replace landing page with a chat interface ✅
