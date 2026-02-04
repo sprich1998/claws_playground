@@ -20,4 +20,4 @@ Vision
 - Future: integrate with OpenClaw gateway for unified messaging across channels
 
 Roadmap
-- See plan.md for detailed milestones and implementation notes.
+- See Plan.md for detailed milestones and implementation notes.
