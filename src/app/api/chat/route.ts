@@ -2,7 +2,17 @@ import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
-    const { message } = await req.json()
+    const contentType = req.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return NextResponse.json({ error: 'Content-Type must be application/json' }, { status: 415 })
+    }
+
+    const payload = await req.json()
+    const message = typeof payload?.message === 'string' ? payload.message : ''
+
+    if (!message.trim()) {
+      return NextResponse.json({ error: 'Missing or empty "message" field' }, { status: 400 })
+    }
 
     // Create a ReadableStream to stream SSE-like chunks
     const encoder = new TextEncoder()
